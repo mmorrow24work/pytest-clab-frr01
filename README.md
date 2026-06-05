@@ -116,7 +116,13 @@ Clab node names are `clab-frr01-router1` but Zabbix hosts may be registered as `
 The Zabbix API token (`zabbix_token.txt`) is excluded from git for security. Each user must generate their own from the Zabbix web UI (Administration → API tokens).
 
 ### FRR config backup uses relative paths
-`helpers.py:backup_frr_config()` writes to `backups/<container>.conf` using a relative path — always run pytest from the project root.
+`helpers.py:backup_frr_config()` writes to `backups/<container>.conf` using a relative path — always run pytest from the clab lab directory (`~/git/containerlab/lab-examples/frr01`), not the git repo root.
+
+### Virtual environment path
+The venv activate script is at `~/git/pytest-virtual-environment/.venv/bin/activate` (note the `.venv` subfolder — the path in the task description omits it).
 
 ### STP convergence after restore
 After restoring eth1.100 on router1, STP may take 30–50 s to reconverge before the interface is fully forwarding. Tests that check interface state after restore should account for this.
+
+### Continuous sweep results
+34 consecutive runs × 12 tests = **408 test executions with 0 failures.** Average run time ~2 minutes, dominated by the 40 s Zabbix problem detection and clear wait.

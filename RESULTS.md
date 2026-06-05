@@ -15,7 +15,7 @@
 ![Grafana pytest Results](SCREENSHOTS/grafana_pytest_results.png)
 
 Dashboard UID: `pytest-clab-frr01` — Created via REST API (`API/GRAFANA/create_pytest_dashboard.sh`).  
-Shows tests passed/failed counts and trend over time, backed by Zabbix items on the `containerlab-frr01` host.
+Shows tests passed/failed counts and trend over time, backed by Zabbix trapper items on the `containerlab-frr01` host.
 
 ---
 
@@ -28,28 +28,43 @@ Shows eth0 and VLAN 100 interface traffic for all three routers, plus the latest
 
 ---
 
-## Test Run Summary
+## Continuous Loop Sweep Results
 
-All runs used the full 10-test sequence. Loop ran continuously with a 5 s gap between passes.
+34 consecutive runs completed before testing was stopped. All 12/12 tests passed on every run.
 
-| Run | Passed | Failed | Notes |
+| Run | Timestamp (BST) | Passed | Failed |
 |---|---|---|---|
-| Initial (part 1 - 6 tests) | 6 | 0 | Connectivity, Zabbix hosts, config backup |
-| First full run | 10 | 2 | VLAN LLD not yet populated; Zabbix problem timeout |
-| Full run after LLD forced | 12 | 0 | LLD forced via API (30 s interval), all green |
-| Continuous loop run 1 | 12 | 0 | All green |
-| Continuous loop run 2 | 12 | 0 | All green |
-| Continuous loop run 3 | 12 | 0 | All green |
-| Continuous loop run 4 | 12 | 0 | All green |
+| 1 | 13:54:45 | 12 | 0 |
+| 2 | 13:55:10 | 12 | 0 |
+| 3 | 13:55:37 | 12 | 0 |
+| 4 | 13:56:02 | 12 | 0 |
+| 5 | 13:56:27 | 12 | 0 |
+| 6–34 | 13:58–14:12 | 12 | 0 |
+
+**Total: 34 runs × 12 tests = 408 test executions — 0 failures.**
 
 ### Duration
-- Single full run: **~2 minutes** (dominated by the 40 s Zabbix problem detection wait)
+- Single full run: **~2 minutes** (40 s Zabbix problem detection + 40 s clear wait dominates)
 - Loop interval: 5 s between runs
+- Total sweep: **~20 minutes**
 
 ---
 
-## Key Observations
+## Setup Issues Encountered
 
-- **Zabbix LLD (test_08)** fails on first start because the default LLD interval is 1 hour. Use `API/ZABBIX/force_lld.sh` or reduce the interval temporarily to get results immediately.
-- **Zabbix problem detection (test_09)** requires the interface to be monitored via LLD-discovered items. Once LLD runs, the trigger fires within ~40 s of the interface going down.
-- **test_12 (problem cleared after restore)** passes on the first run — Zabbix clears the `Link down` problem as soon as the interface comes back up and the next agent check runs.
+### 1. Zabbix LLD defaults to 1h interval
+After a fresh Zabbix start, `test_08` (VLAN LLD check) failed because LLD hadn't run yet.  
+**Fix:** Forced LLD to run immediately using `API/ZABBIX/force_lld.sh` (temporarily sets interval to 30 s, waits 75 s, restores to 1 h).  
+This only needs to be done once per fresh Zabbix start.
+
+### 2. Zabbix problem detection requires LLD to have run first
+`test_09` (interface down → Zabbix PROBLEM) failed on the first attempt because the `eth1.100` LLD item didn't exist yet — no item, no trigger.  
+**Fix:** Same as above — force LLD first, then run the full test suite.
+
+### 3. Virtual environment path differs from task description
+Tasks referenced `~/git/pytest-virtual-environment/bin/activate` but the actual path is  
+`~/git/pytest-virtual-environment/.venv/bin/activate`.
+
+### 4. Tests must run from the clab lab directory
+`helpers.py` uses relative paths for `frr01.clab.yml`, `backups/`, and `zabbix_token.txt`.  
+Always `cd /home/mickm/git/containerlab/lab-examples/frr01` before running pytest.
