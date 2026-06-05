@@ -24,27 +24,37 @@ Shows tests passed/failed counts and trend over time, backed by Zabbix trapper i
 ![Grafana Zabbix Dashboard](SCREENSHOTS/grafana_zabbix_hosts.png)
 
 Dashboard UID: `clab-frr01-hosts` — Created via REST API (`API/GRAFANA/create_zabbix_hosts_dashboard.sh`).  
-Shows eth0 and VLAN 100 interface traffic for all three routers, plus the latest pytest result.
+Shows interface traffic for all 6 clab hosts across every interface type:
+
+| Row | Panels |
+|---|---|
+| Management | eth0 Bits Received / Sent — all 6 hosts (routers + PCs) |
+| VLAN 100 sub-interfaces | eth1.100 / eth2.100 / eth3.100 Received / Sent — all 3 routers |
+| Bridge | br100 Received / Sent — all 3 routers |
+| Trunk uplinks | eth1 / eth2 / eth3 Received / Sent — all 3 routers |
+| PCs | eth1.100 Received / Sent — PC1 / PC2 / PC3 |
+| pytest | Last Run Passed / Failed / Exit Code |
 
 ---
 
 ## Continuous Loop Sweep Results
 
-34 consecutive runs completed before testing was stopped. All 12/12 tests passed on every run.
+35 runs completed before testing was stopped (one manual push preceded the continuous loop). All 12/12 tests passed on every run.
 
 | Run | Timestamp (BST) | Passed | Failed |
 |---|---|---|---|
-| 1 | 13:54:45 | 12 | 0 |
-| 2 | 13:55:10 | 12 | 0 |
-| 3 | 13:55:37 | 12 | 0 |
-| 4 | 13:56:02 | 12 | 0 |
-| 5 | 13:56:27 | 12 | 0 |
-| 6–34 | 13:58–14:12 | 12 | 0 |
+| 1 (manual) | ~13:53 | 12 | 0 |
+| 2 | 13:54:45 | 12 | 0 |
+| 3 | 13:55:10 | 12 | 0 |
+| 4 | 13:55:37 | 12 | 0 |
+| 5 | 13:56:02 | 12 | 0 |
+| 6–35 | 13:58–14:12 | 12 | 0 |
 
-**Total: 34 runs × 12 tests = 408 test executions — 0 failures.**
+**Total: 35 runs × 12 tests = 420 test executions — 0 failures.**
 
 ### Duration
-- Single full run: **~2 minutes** (40 s Zabbix problem detection + 40 s clear wait dominates)
+- Average run duration: **~28 s** (as recorded in `pytest.run_duration_seconds` Zabbix item)
+- Maximum run duration: **~2.2 minutes** (Zabbix problem detection + clear wait dominates)
 - Loop interval: 5 s between runs
 - Total sweep: **~20 minutes**
 

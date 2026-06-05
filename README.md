@@ -2,7 +2,7 @@
 
 A pytest validation suite for a [containerlab](https://containerlab.dev/) **frr01** network lab.  
 The lab runs three FRRouting routers and three Alpine PC clients connected via OSPF and VLAN 100 bridges. Zabbix monitors all six nodes via the Zabbix agent.  
-Test results are exported to Grafana via the Prometheus Pushgateway, and Grafana dashboards visualise pass/fail trends and per-test durations across continuous test sweeps.
+Test results are pushed to Zabbix via `zabbix_sender` trapper items and visualised in Grafana dashboards showing pass/fail trends and per-run durations across continuous test sweeps.
 
 ---
 
@@ -14,7 +14,8 @@ Test results are exported to Grafana via the Prometheus Pushgateway, and Grafana
 - Test failure-detection: shut down an interface → Zabbix raises a PROBLEM
 - Test recovery: restore the interface → Zabbix clears the PROBLEM
 - Back up FRR configs programmatically during test runs
-- Expose test results to Grafana in real time using the Prometheus Pushgateway
+- Push test results to Zabbix trapper items via `zabbix_sender` after each run
+- Visualise pass/fail trends and run durations in Grafana dashboards
 - Run the full suite continuously and track pass-rate trends
 
 ---
@@ -124,5 +125,16 @@ The venv activate script is at `~/git/pytest-virtual-environment/.venv/bin/activ
 ### STP convergence after restore
 After restoring eth1.100 on router1, STP may take 30–50 s to reconverge before the interface is fully forwarding. Tests that check interface state after restore should account for this.
 
+### Grafana Zabbix plugin requires schema-12 target format
+Grafana Zabbix plugin v6.3.x silently returns no data unless every target includes all schema-12 fields: `queryType`, `resultFormat`, `schema: 12`, `group`, `host`, `item`, `options`, `proxy`, `table`, `tags`, `itemTag`, `macro`, `trigger`, `countTriggersBy`, `evaltype`. Omitting even one field causes the panel to show "No data" with no error.  
+**Tip:** When building dashboards via the API, copy the full target structure from a working dashboard rather than using a minimal subset.
+
+### Grafana datasource cacheTTL delays new Zabbix items
+The Zabbix datasource caches the item list for 1 hour by default. New items pushed via `zabbix_sender` (or created via `item.create`) are invisible to Grafana until the cache expires.  
+**Tip:** Temporarily set `cacheTTL: 1m` via the Grafana datasource API and restart the Grafana container, then restore to `1h` once the new items appear.
+
+### zabbix_sender with timestamps requires the item to exist first
+Pushing historic data with `zabbix_sender -T` (timestamp mode) fails silently if the target item was auto-created by a previous `zabbix_sender` call but the sender is now trying to backfill — the item must already exist in Zabbix. Create it explicitly via `item.create` API before backfilling.
+
 ### Continuous sweep results
-34 consecutive runs × 12 tests = **408 test executions with 0 failures.** Average run time ~2 minutes, dominated by the 40 s Zabbix problem detection and clear wait.
+35 runs × 12 tests = **420 test executions with 0 failures.** Average run time ~28 s per run as recorded by `pytest.run_duration_seconds` in Zabbix, with a maximum of ~2.2 minutes (dominated by the 40 s Zabbix problem detection and 40 s clear wait).
