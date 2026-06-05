@@ -4,4 +4,3 @@ __pycache__/
 *.pyc
 backups/*.conf
 reports/
-SCREENSHOTS/*.png
