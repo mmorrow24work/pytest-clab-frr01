@@ -29,6 +29,162 @@ ALL_NODES = ROUTERS + PCS
 # Default topology file for this lab directory
 CLAB_TOPO_FILE = "frr01.clab.yml"
 
+# -------------------------
+# SNMP TRAP constants
+# -------------------------
+
+# IP of the zabbix-snmptraps container on the digital-twin Docker network.
+# Containers send traps to this IP:port; snmptrapd writes to SNMPTRAP_LOG.
+SNMPTRAP_CONTAINER = "zabbix-docker-zabbix-snmptraps-1"
+SNMPTRAP_IP        = "172.18.0.5"
+SNMPTRAP_PORT      = "1162"
+SNMPTRAP_LOG       = "/var/lib/zabbix/snmptraps/snmptraps.log"
+
+# Management IP of each frr01 node (used to match source in snmptraps.log)
+NODE_MGMT_IP = {
+    "clab-frr01-router1": "172.18.0.41",
+    "clab-frr01-router2": "172.18.0.42",
+    "clab-frr01-router3": "172.18.0.43",
+    "clab-frr01-PC1":     "172.18.0.51",
+    "clab-frr01-PC2":     "172.18.0.52",
+    "clab-frr01-PC3":     "172.18.0.53",
+}
+
+# Data-plane IPs used by iperf tests
+IPERF_IPS = {
+    # eth1 (PC↔router access links)
+    "clab-frr01-PC1":     "192.168.11.2",
+    "clab-frr01-PC2":     "192.168.12.2",
+    "clab-frr01-PC3":     "192.168.13.2",
+    # backbone links: peer IP reachable from each router
+    "clab-frr01-router1": "192.168.1.1",
+    "clab-frr01-router2": "192.168.1.2",
+    "clab-frr01-router3": "192.168.2.2",
+    # VLAN 100 bridge IPs
+    "PC1_vlan100":     "192.168.100.1",
+    "PC2_vlan100":     "192.168.100.2",
+    "PC3_vlan100":     "192.168.100.3",
+    "router1_br100":   "192.168.100.10",
+    "router2_br100":   "192.168.100.20",
+    "router3_br100":   "192.168.100.30",
+}
+
+# -------------------------
+# iperf3 helpers
+# -------------------------
+
+def iperf_run(server_container, client_container, server_ip,
+              duration=5, parallel=1, reverse=False, port=5201):
+    """Start a one-shot iperf3 server on server_container, run a client from
+    client_container, and return the received throughput in Mbps.
+
+    Uses --one-off so the server exits automatically after one connection.
+    """
+    # Kill any stale iperf3 first
+    subprocess.run(
+        ["docker", "exec", server_container, "sh", "-c", "pkill -9 iperf3 2>/dev/null; true"],
+        capture_output=True,
+    )
+    time.sleep(0.2)
+
+    subprocess.Popen(
+        ["docker", "exec", "-d", server_container,
+         "iperf3", "-s", "--one-off", "-p", str(port)],
+    )
+    time.sleep(0.5)
+
+    cmd = [
+        "docker", "exec", client_container,
+        "iperf3", "-c", server_ip, "-p", str(port),
+        "-t", str(duration), "--json",
+    ]
+    if parallel > 1:
+        cmd += ["-P", str(parallel)]
+    if reverse:
+        cmd.append("-R")
+
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            timeout=duration + 20)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"iperf3 client failed (rc={result.returncode}): {result.stderr.strip()}"
+        )
+
+    data = json.loads(result.stdout)
+    # sum_received covers multi-stream; fall back to first stream for single
+    end = data["end"]
+    if "sum_received" in end:
+        bps = end["sum_received"]["bits_per_second"]
+    else:
+        bps = end["streams"][0]["receiver"]["bits_per_second"]
+    return bps / 1e6   # → Mbps
+
+
+# -------------------------
+# SNMP trap helpers
+# -------------------------
+
+def snmptraps_log_size():
+    """Return a Unix timestamp to use as a 'before' marker for trap checks.
+
+    Named log_size for API compatibility; actually returns time.time() because
+    the Zabbix snmptrapd container logs to stdout (docker logs) rather than
+    writing to the snmptraps.log file (busybox date format bug in the handler
+    prevents the file from being updated).
+    """
+    return time.time()
+
+
+def snmp_trap_send(source_container, oid="SNMPv2-MIB::coldStart.0",
+                   community="public", extra_varbinds=None):
+    """Send an SNMPv2c trap from source_container to Zabbix snmptrapd."""
+    cmd = [
+        "docker", "exec", source_container,
+        "snmptrap", "-v", "2c", "-c", community,
+        f"{SNMPTRAP_IP}:{SNMPTRAP_PORT}",
+        "",  # sysUpTime (leave empty for auto)
+        oid,
+    ]
+    if extra_varbinds:
+        cmd += extra_varbinds
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def snmptrap_wait_for(source_ip, before_ts, oid_substring="", timeout=15):
+    """Poll docker logs of the snmptrap container for a new entry from source_ip.
+
+    before_ts is a Unix timestamp (float) returned by snmptraps_log_size() —
+    used as the --since argument to 'docker logs'.
+
+    Returns (True, snippet) if found within timeout, else (False, "").
+    """
+    import datetime
+    # Format as RFC3339 UTC for docker logs --since
+    since = datetime.datetime.utcfromtimestamp(before_ts - 1).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        result = subprocess.run(
+            ["docker", "logs", "--since", since, SNMPTRAP_CONTAINER],
+            capture_output=True, text=True,
+        )
+        # snmptrapd writes to stdout; docker may put daemon msgs on stderr
+        logs = result.stdout + result.stderr
+        if source_ip in logs:
+            if not oid_substring or oid_substring in logs:
+                lines = logs.split("\n")
+                snippet_lines: list[str] = []
+                for i, line in enumerate(lines):
+                    if source_ip in line:
+                        snippet_lines = lines[i: i + 4]
+                        break
+                return True, "\n".join(snippet_lines)
+        time.sleep(1)
+    return False, ""
+
+
 def run_cmd(cmd):
     """Backward-compatible: return stdout as string."""
     result = subprocess.run(
