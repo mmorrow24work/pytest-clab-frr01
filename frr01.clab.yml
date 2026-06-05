@@ -1,0 +1,121 @@
+# ./frr01.clab.yml
+
+name: frr01
+mgmt:
+  network: digital-twin
+topology:
+  nodes:
+    router1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.5.0-with-ssh-snmp-zbx-softflowd-iperf3-lldp
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.41
+      binds:
+        - router1/daemons:/etc/frr/daemons
+        - router1/frr.conf:/etc/frr/frr.conf
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip link add link eth2 name eth2.100 type vlan id 100
+        - ip link set eth2.100 up
+        - ip link add link eth3 name eth3.100 type vlan id 100
+        - ip link set eth3.100 up
+        - ip link add name br100 type bridge
+        - ip link set br100 up
+        - ip link set br100 type bridge stp_state 1
+        - echo 2 > /sys/class/net/br100/bridge/stp_protocol
+        - echo 4096 > /sys/class/net/br100/bridge/priority
+        - ip link set eth1.100 master br100
+        - ip link set eth2.100 master br100
+        - ip link set eth3.100 master br100
+        - ip addr add 192.168.100.10/24 dev br100
+    router2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.5.0-with-ssh-snmp-zbx-softflowd-iperf3-lldp
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.42
+      binds:
+        - router2/daemons:/etc/frr/daemons
+        - router2/frr.conf:/etc/frr/frr.conf
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip link add link eth2 name eth2.100 type vlan id 100
+        - ip link set eth2.100 up
+        - ip link add link eth3 name eth3.100 type vlan id 100
+        - ip link set eth3.100 up
+        - ip link add name br100 type bridge
+        - ip link set br100 up
+        - ip link set br100 type bridge stp_state 1
+        - echo 2 > /sys/class/net/br100/bridge/stp_protocol
+        - echo 8192 > /sys/class/net/br100/bridge/priority
+        - ip link set eth1.100 master br100
+        - ip link set eth2.100 master br100
+        - ip link set eth3.100 master br100
+        - ip addr add 192.168.100.20/24 dev br100
+    router3:
+      kind: linux
+      image: quay.io/frrouting/frr:10.5.0-with-ssh-snmp-zbx-softflowd-iperf3-lldp
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.43
+      binds:
+        - router3/daemons:/etc/frr/daemons
+        - router3/frr.conf:/etc/frr/frr.conf
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip link add link eth2 name eth2.100 type vlan id 100
+        - ip link set eth2.100 up
+        - ip link add link eth3 name eth3.100 type vlan id 100
+        - ip link set eth3.100 up
+        - ip link add name br100 type bridge
+        - ip link set br100 up
+        - ip link set br100 type bridge stp_state 1
+        - echo 2 > /sys/class/net/br100/bridge/stp_protocol
+        - echo 12288 > /sys/class/net/br100/bridge/priority
+        - ip link set eth1.100 master br100
+        - ip link set eth2.100 master br100
+        - ip link set eth3.100 master br100
+        - ip addr add 192.168.100.30/24 dev br100
+    PC1:
+      kind: linux
+      image: alpine:3.23.0-with-ssh-snmp-zbx-softflowd-iperf3
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.51
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip addr add 192.168.100.1/24 dev eth1.100
+    PC2:
+      kind: linux
+      image: alpine:3.23.0-with-ssh-snmp-zbx-softflowd-iperf3
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.52
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip addr add 192.168.100.2/24 dev eth1.100
+    PC3:
+      kind: linux
+      image: alpine:3.23.0-with-ssh-snmp-zbx-softflowd-iperf3
+      network-mode: "digital-twin"
+      mgmt-ipv4: 172.18.0.53
+      exec:
+        - sleep 2
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip link set eth1.100 up
+        - ip addr add 192.168.100.3/24 dev eth1.100
+  links:
+    - endpoints: ["router1:eth1", "router2:eth1"]
+    - endpoints: ["router1:eth2", "router3:eth1"]
+    - endpoints: ["router2:eth2", "router3:eth2"]
+    - endpoints: ["PC1:eth1", "router1:eth3"]
+    - endpoints: ["PC2:eth1", "router2:eth3"]
+    - endpoints: ["PC3:eth1", "router3:eth3"]
+
+

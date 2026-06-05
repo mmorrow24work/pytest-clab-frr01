@@ -1,0 +1,128 @@
+Project steps: 
+
+- Create remote repo = https://github.com/mmorrow24work/pytest-clab-frr01
+- Create README.md to capture objectives, lessons learned both good and bad
+- Create RESULTS.md to capture the project results, with screenshots from pytest report.html, containerlab (clab) topology, and dashboards from Grafana
+- Create QUICKSTART.md to capture instructions to setup the lab, start/stop the clab network, run pytest tests
+- Create SCREENSHOTS folder to capture images from Zabbix, Grafana and Pytest
+- Create API/GRAFANA folder to capture API calls to Grafana used by the project
+- Create API/ZABBIX folder to capture API calls to Zabbix used by the project
+- Use mermaid drawing below to capture the clab topology:
+```mermaid
+---
+title: frr01 (layered topology)
+---
+graph TD
+  subgraph Access
+    direction TB
+    PC1["PC1"]
+    PC2["PC2"]
+    PC3["PC3"]
+  end
+
+  subgraph Core
+    direction TB
+    router1["router1"]
+    router2["router2"]
+    router3["router3"]
+  end
+
+  Access === router1
+  Access === router2
+  Access === router3
+
+  router1 --- router2
+  router1 --- router3
+  router2 --- router3
+
+  style Access fill:#fafafa,stroke:#555,stroke-width:2px
+  style Core fill:#e6f3ff,stroke:#555,stroke-width:2px
+  ```
+- Start up Zabbix:
+```
+cp ~/git/digital-twin-containerlab/zabbix_docker_compose/* ~/git/zabbix-docker/.
+cd ~/git/zabbix-docker/
+docker compose -f ./docker-compose_v3_alpine_mysql_snmptraps_latest.yaml -f ./docker-compose.override.yml up -d
+- Activate virtual environment to run pytest from:
+```
+source ~/git/pytest-virtual-environment/bin/activate
+```
+- Check the virtual environment and note all differences in the QUICKSTART.md
+```
+(.venv) mickm@ubuntu24-2:~/git/pytest-virtual-environment$ pip list --format columns
+Package            Version
+------------------ ---------
+bcrypt             5.0.0
+certifi            2026.5.20
+cffi               2.0.0
+charset-normalizer 3.4.7
+cryptography       48.0.0
+idna               3.18
+iniconfig          2.3.0
+invoke             3.0.3
+Jinja2             3.1.6
+markdown-it-py     4.2.0
+MarkupSafe         3.0.3
+mdurl              0.1.2
+packaging          26.2
+paramiko           5.0.0
+pip                26.1.2
+pluggy             1.6.0
+pycparser          3.0
+Pygments           2.20.0
+PyNaCl             1.6.2
+pytest             9.0.3
+pytest-html        4.2.0
+pytest-metadata    3.1.1
+PyYAML             6.0.3
+requests           2.34.2
+rich               15.0.0
+urllib3            2.7.0
+(.venv) mickm@ubuntu24-2:~/git/pytest-virtual-environment$
+```
+- Prepare the pytest-clab-frr01 project:
+```
+nano ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/zabbix_token.txt
+touch ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/conftest.py
+mkdir -p ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/tests
+cp ~/git/digital-twin-containerlab/TESTING/CASES/test-1-chaptgpt-r2/tests/*.py ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/tests/.
+cp ~/git/digital-twin-containerlab/TESTING/CASES/test-1-chaptgpt-r2/helpers.py ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/.
+mkdir -p ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01/backups
+mkdir -p ~/git/containerlab/lab-examples/frr01//pytest-clab-frr01/reports
+```
+- Deploy the frr01 clab network:
+```
+cd ~/git/containerlab/lab-examples/frr01
+./run.sh
+```
+- Create hosts in Zabbix to monitor the clab hosts using the Zabbix agent
+- Ensure the clab hosts in Zabbix line up with the pytest scripts
+- Check that Zabbix LLD can discover the interfaces on the clab hosts
+- Run the pytest scripts and save the results in html format
+```
+cd ~/git/containerlab/lab-examples/frr01/pytest-clab-frr01
+pytest -v --html=reports/report.html
+```
+- Upload the pytest results as a first pass
+- Create dashboards in Grafana that capture the pytest results and how long it takes to run the tests
+```
+http://localhost:5000/dashboards ( user=admin, password=admin )
+```
+- Create the dashboards using API calls so they can be edited  
+- If you run out of tokens - pause and resume automatically when allowed by the pro account 
+- Do not try to purchase more tokens
+- Do not wait for me to tell you to continue
+- Once happy with the test environment and the dashboards in Grafana, run the test suite in a loop continuously until told to stop
+- After testing is stopped stop Zabbix:
+```
+cd ~/git/zabbix-docker/
+docker compose -f ~/git/zabbix-docker/docker-compose_v3_alpine_mysql_snmptraps_latest.yaml -f  ~/git/digital-twin-containerlab/zabbix_docker_compose/docker-compose.override.yml down
+```
+- After testing is stopped - destroy the frr01 clab network
+```
+cd ~/git/containerlab/lab-examples/frr01
+clab destroy -t ./frr01.clab.yml
+```
+- After testing is stopped - update the repo README.md, RESULTS.md, QUICKSTART.md, SCREENSHOTS folder and API folder
+
+
