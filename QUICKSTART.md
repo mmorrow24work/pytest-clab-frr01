@@ -143,15 +143,43 @@ cd ~/git/containerlab/lab-examples/frr01
 
 HTML results are written to `~/git/pytest-clab-frr01/reports/report.html`.
 
-## 9 — Run continuously (loop mode)
+## 9 — Run continuously (loop mode — core tests only)
 
-The continuous loop runs the full suite repeatedly, pushing metrics to Zabbix after each run:
+The continuous loop runs the core 10-test suite repeatedly, pushing metrics to Zabbix after each run:
 
 ```bash
 bash ~/git/pytest-clab-frr01/tests/run_continuous.sh
 ```
 
-Press `Ctrl-C` to stop. Metrics (tests_passed, tests_failed, tests_total, exit_code, run_duration_seconds) are sent to the `containerlab-frr01` Zabbix host after each run and appear in the pytest-clab-frr01 Grafana dashboard.
+Press `Ctrl-C` to stop. Metrics (tests_passed, tests_failed, tests_total, exit_code, run_duration_seconds) are sent to the `containerlab-frr01` Zabbix host and appear in the pytest-clab-frr01 Grafana dashboard.
+
+## 10 — Run EXTRAS tests (iperf throughput + SNMP traps)
+
+The EXTRAS suite adds 10 additional tests covering throughput and SNMP trap delivery. Run once:
+
+```bash
+cd ~/git/containerlab/lab-examples/frr01
+/home/mickm/git/pytest-virtual-environment/.venv/bin/pytest -v -s \
+  ~/git/pytest-clab-frr01/EXTRAS/tests/ --tb=short
+```
+
+Run EXTRAS + core tests in a loop for a fixed duration (default 30 minutes):
+
+```bash
+bash ~/git/pytest-clab-frr01/EXTRAS/run_loop.sh
+```
+
+This runs all 20 tests per iteration, pushes results to Zabbix, and stops after 30 minutes. **Zabbix and clab are not stopped when the loop ends.**
+
+### EXTRAS prerequisites
+
+The SNMP trap tests (test_18–22) require the `zbx_snmptrap_items` session fixture in `EXTRAS/conftest.py`, which automatically:
+- Adds an SNMP interface (port 161) to each router host in Zabbix
+- Creates a `snmptrap.fallback` item on each router host
+
+No manual Zabbix configuration is needed — the fixture handles setup. The `zabbix_token.txt` file must be present (see step 3).
+
+> **Note:** The Zabbix snmptrapd container has a busybox `date` format bug in its trap handler script (`zabbix_trap_handler.sh`), which prevents traps from being written to `snmptraps.log`. Traps ARE received and visible in `docker logs`. The EXTRAS trap tests verify delivery via `docker logs --since` rather than the log file.
 
 ## 11 — Stop Zabbix
 

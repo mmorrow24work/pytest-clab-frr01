@@ -17,6 +17,8 @@ Test results are pushed to Zabbix via `zabbix_sender` trapper items and visualis
 - Push test results to Zabbix trapper items via `zabbix_sender` after each run
 - Visualise pass/fail trends and run durations in Grafana dashboards
 - Run the full suite continuously and track pass-rate trends
+- **EXTRAS:** Measure iperf3 throughput across all data-plane paths
+- **EXTRAS:** Send SNMP traps from each router and verify delivery to Zabbix snmptrapd
 
 ---
 
@@ -74,6 +76,8 @@ VLAN 100 is created on each router's eth1–eth3 uplinks and bridged (br100) wit
 
 ## Test Suite
 
+### Core tests (`tests/`)
+
 | File | What it tests |
 |---|---|
 | `test_01_mgmt_cli.py` | Management interface (eth0) is UP on all 6 nodes |
@@ -86,6 +90,21 @@ VLAN 100 is created on each router's eth1–eth3 uplinks and bridged (br100) wit
 | `test_09_zabbix_problem.py` | Zabbix raises a PROBLEM for eth1.100 down (≤ 60 s) |
 | `test_11_restore_interface.py` | eth1.100 on router1 is restored |
 | `test_12_interfaces_zabbix_after_failure.py` | Zabbix clears the problem after restore |
+
+### EXTRAS tests (`EXTRAS/tests/`) — throughput and SNMP traps
+
+| File | What it tests |
+|---|---|
+| `test_13_iperf_pc1_to_pc2.py` | PC1→PC2 throughput via OSPF data plane ≥ 1 Gbps |
+| `test_14_iperf_pc2_to_pc3.py` | PC2→PC3 throughput via OSPF data plane ≥ 1 Gbps |
+| `test_15_iperf_router_backbone.py` | All 3 backbone links (r1↔r2, r1↔r3, r2↔r3) ≥ 1 Gbps each |
+| `test_16_iperf_vlan100.py` | VLAN 100 bridge path (PC1.100→PC2.100, PC1.100→router1 br100) ≥ 1 Gbps |
+| `test_17_iperf_parallel.py` | 4-stream parallel and reverse direction ≥ 1 Gbps |
+| `test_18_snmp_trap_coldstart.py` | router1 sends coldStart trap; snmptrapd receives it |
+| `test_19_snmp_trap_all_routers.py` | All 3 routers send concurrent warmStart traps; all received |
+| `test_20_snmp_trap_linkdown_oid.py` | router2 sends linkDown trap; OID preserved in log |
+| `test_21_snmp_trap_custom_string.py` | router3 sends trap with unique sentinel varbind; string verified |
+| `test_22_snmp_trap_zabbix.py` | Zabbix SNMP interface + snmptrap.fallback item created via API; trap delivery verified |
 
 ---
 
@@ -136,5 +155,18 @@ The Zabbix datasource caches the item list for 1 hour by default. New items push
 ### zabbix_sender with timestamps requires the item to exist first
 Pushing historic data with `zabbix_sender -T` (timestamp mode) fails silently if the target item was auto-created by a previous `zabbix_sender` call but the sender is now trying to backfill — the item must already exist in Zabbix. Create it explicitly via `item.create` API before backfilling.
 
+### iperf3 --one-off keeps tests independent
+Starting the iperf3 server with `--one-off` causes it to exit automatically after the first client connection. This avoids port conflicts between consecutive tests and eliminates the need for explicit teardown. Without it, stale iperf3 processes from a crashed test block the next run on the same port.
+
+### Zabbix snmptrapd container has a busybox date format bug
+The `zabbix_trap_handler.sh` script on the Alpine-based snmptrapd container fails at the `date` command because the `ZBX_SNMP_TRAP_DATE_FORMAT` env var contains literal quote characters (`"+%Y-%m-%dT%T%z"` instead of `+%Y-%m-%dT%T%z`). With `set -eo pipefail`, this causes the handler to exit before writing to `snmptraps.log`. Traps ARE received by snmptrapd and logged to stdout (visible in `docker logs`). **Workaround:** verify trap delivery via `docker logs --since <timestamp>` rather than reading the log file.
+
+### snmptrap needs MIBs loaded for named OIDs
+`snmptrap -v 2c ... IF-MIB::linkDown` requires the IF-MIB to be loaded on the source container. The frr01 router image includes net-snmp with standard MIBs, so `IF-MIB::linkDown`, `SNMPv2-MIB::coldStart`, and `SNMPv2-MIB::warmStart` work without extra installation.
+
+### iperf3 throughput on Docker veth links is very high
+All containers run on the same Linux host connected by virtual Ethernet pairs. Throughput regularly exceeds 10 Gbps on direct links and 7–8 Gbps through the VLAN 100 bridge (extra STP/bridge processing overhead). The minimum threshold for assertions is 1 Gbps — easily met even under load.
+
 ### Continuous sweep results
-35 runs × 12 tests = **420 test executions with 0 failures.** Average run time ~28 s per run as recorded by `pytest.run_duration_seconds` in Zabbix, with a maximum of ~2.2 minutes (dominated by the 40 s Zabbix problem detection and 40 s clear wait).
+**Core loop:** 35 runs × 12 tests = 420 executions, 0 failures. Avg ~28 s/run, max ~2.2 min.  
+**EXTRAS loop:** 17 runs × 26 tests = **442 executions, 0 failures.** Avg 1.76 min/run, max 3.23 min — dominated by Zabbix problem detection + SNMP trap waits.
