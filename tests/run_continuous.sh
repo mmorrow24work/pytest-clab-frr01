@@ -34,6 +34,7 @@ mkdir -p "$REPORTS_DIR"
 run_once() {
   TIMESTAMP=$(date +%Y%m%d-%H%M%S)
   REPORT_FILE="$REPORTS_DIR/report.html"
+  RUN_START=$(date +%s)
 
   echo ""
   echo "****************************"
@@ -50,12 +51,14 @@ run_once() {
   EXIT_CODE=$?
   set -e
 
+  DURATION=$(( $(date +%s) - RUN_START ))
+
   # Parse summary line
   PASSED=$(grep -oP '\d+(?= passed)' "$LOG_FILE" || echo 0)
   FAILED=$(grep -oP '\d+(?= failed)' "$LOG_FILE" || echo 0)
   TOTAL=$(( ${PASSED:-0} + ${FAILED:-0} ))
 
-  echo "Run $TIMESTAMP: passed=${PASSED:-0} failed=${FAILED:-0} exit=${EXIT_CODE}"
+  echo "Run $TIMESTAMP: passed=${PASSED:-0} failed=${FAILED:-0} exit=${EXIT_CODE} duration=${DURATION}s"
 
   # Push to Zabbix
   TMPFILE=$(mktemp)
@@ -64,6 +67,7 @@ $ZABBIX_HOST pytest.exit_code $EXIT_CODE
 $ZABBIX_HOST pytest.tests_total $TOTAL
 $ZABBIX_HOST pytest.tests_passed ${PASSED:-0}
 $ZABBIX_HOST pytest.tests_failed ${FAILED:-0}
+$ZABBIX_HOST pytest.run_duration_seconds $DURATION
 EOF
   zabbix_sender -z "$ZABBIX_SERVER" -p "$ZABBIX_PORT" -i "$TMPFILE" || true
   rm -f "$TMPFILE"
